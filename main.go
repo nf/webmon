@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 /*
-webfront is an HTTP reverse-proxy.
+webmon is a simple website monitoring program.
 
 It reads a JSON-formatted rule file like this:
 
