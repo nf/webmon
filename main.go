@@ -76,6 +76,7 @@ type Host struct {
 	Email string
 
 	Error error
+	sent bool
 }
 
 func (r *Runner) Ping(h *Host) error {
@@ -84,6 +85,7 @@ func (r *Runner) Ping(h *Host) error {
 	if err != nil {
 		return r.Fail(h, err)
 	}
+	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		return r.Fail(h, errors.New(resp.Status))
 	}
