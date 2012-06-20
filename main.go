@@ -58,6 +58,7 @@ var (
 	pollInterval = flag.Duration("poll", time.Second*10, "file poll interval")
 	fromEmail    = flag.String("from", "webmon@localhost", "notification from address")
 	mailServer   = flag.String("smtp", "localhost:25", "SMTP server")
+	numErrors    = flag.Int("errors", 3, "number of errors before notifying")
 )
 
 func main() {
@@ -68,14 +69,18 @@ func main() {
 type Runner struct {
 	last   time.Time
 	hosts  []*Host
-	errors map[string]error
+	errors map[string]*State
 }
 
 type Host struct {
 	Host  string
 	Email string
 
-	Error error
+	Error []error
+}
+
+type State struct {
+	err  []error
 	sent bool
 }
 
@@ -102,11 +107,17 @@ func (r *Runner) OK(h *Host) error {
 }
 
 func (r *Runner) Fail(h *Host, getErr error) error {
-	if r.errors[h.Host] != nil {
+	s := r.errors[h.Host]
+	if s == nil {
+		s = new(State)
+	}
+	s.err = append(s.err, getErr)
+	h.Error = s.err
+	r.errors[h.Host] = s
+	if s.sent || len(s.err) < *numErrors {
 		return nil
 	}
-	r.errors[h.Host] = getErr
-	h.Error = getErr
+	s.sent = true
 	return h.Notify()
 }
 
@@ -117,7 +128,8 @@ To: {{.Email}}
 Subject: {{.Host}}
 
 {{if .Error}}
-{{.Host}} is down: {{.Error}}
+{{.Host}} is down: {{range .Error}}{{.}}
+{{end}}
 {{else}}
 {{.Host}} has come back up.
 {{end}}
@@ -134,8 +146,7 @@ func (h *Host) Notify() error {
 }
 
 func StartRunner(file string, poll time.Duration) error {
-	r := new(Runner)
-	r.errors = make(map[string]error)
+	r := &Runner{errors: make(map[string]*State)}
 	for {
 		if err := r.loadRules(file); err != nil {
 			return err
