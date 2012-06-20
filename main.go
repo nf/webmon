@@ -29,10 +29,12 @@ to admin@example.net. When the request starts returning 200 OK again, it sends
 another email.
 
 Usage of webmon:
+  -errors=3: number of errors before notifying
   -from="webmon@localhost": notification from address
   -hosts="": host definition file
   -poll=10s: file poll interval
   -smtp="localhost:25": SMTP server
+  -timeout=10s: response read timeout
 
 webmon was written by Andrew Gerrand <adg@golang.org>
 */
@@ -45,6 +47,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -59,6 +62,7 @@ var (
 	fromEmail    = flag.String("from", "webmon@localhost", "notification from address")
 	mailServer   = flag.String("smtp", "localhost:25", "SMTP server")
 	numErrors    = flag.Int("errors", 3, "number of errors before notifying")
+	readTimeout  = flag.Duration("timeout", time.Second*10, "response read timeout")
 )
 
 func main() {
@@ -84,9 +88,26 @@ type State struct {
 	sent bool
 }
 
+func getWithTimeout(u string, timeout time.Duration) (*http.Response, error) {
+	c := &http.Client{Transport: &http.Transport{
+		Dial: func(n, addr string) (net.Conn, error) {
+			c, err := net.Dial(n, addr)
+			if err != nil {
+				return nil, err
+			}
+			err = c.SetReadDeadline(time.Now().Add(timeout))
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		},
+	}}
+	return c.Get(u)
+}
+
 func (r *Runner) Ping(h *Host) error {
 	u := fmt.Sprintf("http://%s/", h.Host)
-	resp, err := http.Get(u)
+	resp, err := getWithTimeout(u, *readTimeout)
 	if err != nil {
 		return r.Fail(h, err)
 	}
