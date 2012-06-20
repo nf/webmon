@@ -52,6 +52,7 @@ import (
 	"net/smtp"
 	"os"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 )
@@ -71,9 +72,10 @@ func main() {
 }
 
 type Runner struct {
-	last   time.Time
-	hosts  []*Host
-	errors map[string]*State
+	sync.Mutex // Protects errors during concurrent Ping
+	last       time.Time
+	hosts      []*Host
+	errors     map[string]*State
 }
 
 type Host struct {
@@ -119,22 +121,27 @@ func (r *Runner) Ping(h *Host) error {
 }
 
 func (r *Runner) OK(h *Host) error {
+	r.Lock()
 	if r.errors[h.Host] == nil {
+		r.Unlock()
 		return nil
 	}
 	r.errors[h.Host] = nil
+	r.Unlock()
 	h.Error = nil
 	return h.Notify()
 }
 
 func (r *Runner) Fail(h *Host, getErr error) error {
+	r.Lock()
 	s := r.errors[h.Host]
 	if s == nil {
 		s = new(State)
+		r.errors[h.Host] = s
 	}
+	r.Unlock()
 	s.err = append(s.err, getErr)
 	h.Error = s.err
-	r.errors[h.Host] = s
 	if s.sent || len(s.err) < *numErrors {
 		return nil
 	}
@@ -172,8 +179,14 @@ func StartRunner(file string, poll time.Duration) error {
 		if err := r.loadRules(file); err != nil {
 			return err
 		}
-		for _, h := range r.hosts {
-			if err := r.Ping(h); err != nil {
+		errc := make(chan error)
+		for i := range r.hosts {
+			go func(i int) {
+				errc <- r.Ping(r.hosts[i])
+			}(i)
+		}
+		for _ = range r.hosts {
+			if err := <-errc; err != nil {
 				log.Println(err)
 			}
 		}
