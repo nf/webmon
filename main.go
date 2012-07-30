@@ -122,12 +122,16 @@ func (r *Runner) Ping(h *Host) error {
 
 func (r *Runner) OK(h *Host) error {
 	r.Lock()
-	if r.errors[h.Host] == nil {
+	s := r.errors[h.Host]
+	if s == nil {
 		r.Unlock()
 		return nil
 	}
 	r.errors[h.Host] = nil
 	r.Unlock()
+	if !s.sent {
+		return nil
+	}
 	h.Error = nil
 	return h.Notify()
 }
@@ -141,11 +145,11 @@ func (r *Runner) Fail(h *Host, getErr error) error {
 	}
 	r.Unlock()
 	s.err = append(s.err, getErr)
-	h.Error = s.err
 	if s.sent || len(s.err) < *numErrors {
 		return nil
 	}
 	s.sent = true
+	h.Error = s.err
 	return h.Notify()
 }
 
