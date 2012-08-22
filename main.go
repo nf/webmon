@@ -28,6 +28,10 @@ If the request returns anything other than a 200 OK response, it sends an email
 to admin@example.net. When the request starts returning 200 OK again, it sends
 another email.
 
+If a "Hook" field is present in a rule object, it will be executed as a shell
+instruction on mail notification. For example, you might want to use this to
+kill a flaky service. (Gross, but it works.)
+
 Usage of webmon:
   -errors=3: number of errors before notifying
   -from="webmon@localhost": notification from address
@@ -51,6 +55,7 @@ import (
 	"net/http"
 	"net/smtp"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"text/template"
@@ -81,6 +86,7 @@ type Runner struct {
 type Host struct {
 	Host  string
 	Email string
+	Hook  string
 
 	Error []error
 }
@@ -169,6 +175,15 @@ Subject: {{.Host}}
 `)))
 
 func (h *Host) Notify() error {
+	if h.Hook != "" {
+		cmd := exec.Command("bash", "-c", h.Hook)
+		go func() {
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("%s: hook: %v\n%s", h.Host, err, out)
+			}
+		}()
+	}
 	var b bytes.Buffer
 	err := notifyTemplate.Execute(&b, h)
 	if err != nil {
