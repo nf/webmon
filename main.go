@@ -220,7 +220,7 @@ func (r *Runner) loadRules(file string) error {
 		return err
 	}
 	mtime := fi.ModTime()
-	if mtime.Before(r.last) && r.hosts != nil {
+	if !mtime.After(r.last) && r.hosts != nil {
 		return nil
 	}
 	f, err := os.Open(file)
